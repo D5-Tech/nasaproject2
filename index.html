@@ -7,7 +7,7 @@
     
     <!-- Leaflet and Leaflet.draw CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-     integrity="sha26-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
      crossorigin=""/>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
 
@@ -598,6 +598,7 @@
             align-self: flex-start;
             display: flex;
             gap: 5px;
+            padding: 10px 15px;
         }
 
         .loading-indicator span {
@@ -832,7 +833,7 @@
         document.addEventListener('DOMContentLoaded', () => {
 
             // --- VARIABLES & CONFIGURATION ---
-            const GEMINI_API_KEY = 'AIzaSyCmC0a6Soyz2xmYL42Ne57SWRzI3S9iyB4'; 
+            const GEMINI_API_KEY = ''; // IMPORTANT: Leave empty, the execution environment provides the key.
             const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
             const OVERPASS_API_URL = 'https://overpass-api.de/api/interpreter';
             
@@ -911,7 +912,7 @@
                  e.stopPropagation();
                  toolbarContainer.classList.toggle('hidden');
                  if (!toolbarContainer.classList.contains('hidden')) {
-                    deactivateAllTools();
+                     deactivateAllTools();
                  }
             });
             chatbotActivator.addEventListener('click', () => chatbotContainer.classList.remove('hidden'));
@@ -1067,7 +1068,10 @@
                 if (featuresFound) {
                     analysisLegend.classList.remove('hidden');
                 } else {
-                    alert("No analyzable features (buildings, parks, water, etc.) found within the selected areas.");
+                    // Using a custom modal/notification instead of alert would be better UX
+                    // For now, we'll keep the alert for simplicity.
+                    // alert("No analyzable features (buildings, parks, water, etc.) found within the selected areas.");
+                    console.warn("No analyzable features found.");
                 }
             });
 
@@ -1191,6 +1195,21 @@
                 addLayerInteractions(layer);
                 addToHistory('add', layer);
                 deactivateAllTools();
+
+                // Get the bounding box of the drawn layer
+                const bounds = layer.getBounds();
+                const northWest = bounds.getNorthWest();
+                const northEast = bounds.getNorthEast();
+                const southWest = bounds.getSouthWest();
+                const southEast = bounds.getSouthEast();
+
+                // Log the four corner points to the console
+                console.log("--- Bounding Box Coordinates for New Shape ---");
+                console.log(`Top-Left (North-West):     Lat: ${northWest.lat.toFixed(6)}, Lng: ${northWest.lng.toFixed(6)}`);
+                console.log(`Top-Right (North-East):    Lat: ${northEast.lat.toFixed(6)}, Lng: ${northEast.lng.toFixed(6)}`);
+                console.log(`Bottom-Left (South-West):  Lat: ${southWest.lat.toFixed(6)}, Lng: ${southWest.lng.toFixed(6)}`);
+                console.log(`Bottom-Right (South-East): Lat: ${southEast.lat.toFixed(6)}, Lng: ${southEast.lng.toFixed(6)}`);
+                console.log("--------------------------------------------");
             };
             
             map.on(L.Draw.Event.CREATED, onDrawCreated);
@@ -1282,36 +1301,44 @@
                     const userQuery = chatInput.value.trim();
                     appendMessage(userQuery, 'user-message');
                     chatInput.value = '';
-                    askGemini(userQuery, "User Question");
+                    showLoadingIndicator();
+                    askGemini(userQuery);
                 }
             });
 
             const appendMessage = (text, type) => {
                 const messageDiv = document.createElement('div');
-                messageDiv.classList.add('chat-message', `${type}`);
+                messageDiv.classList.add('chat-message', type);
                 messageDiv.textContent = text;
                 chatBody.appendChild(messageDiv);
                 chatBody.scrollTop = chatBody.scrollHeight; 
             };
             
-            const askGemini = async (query, type) => {
-                if (!GEMINI_API_KEY) {
-                    appendMessage("API Key is not configured.", 'ai-message');
-                    return;
-                }
-                
-                if (type === "Analysis Report") {
-                     appendMessage("Generating AI Analysis...", 'ai-message');
-                }
-                
-                const lastMessage = chatBody.lastElementChild;
+            const showLoadingIndicator = () => {
+                const loadingDiv = document.createElement('div');
+                loadingDiv.classList.add('loading-indicator');
+                loadingDiv.innerHTML = '<span></span><span></span><span></span>';
+                chatBody.appendChild(loadingDiv);
+                chatBody.scrollTop = chatBody.scrollHeight;
+            };
 
+            const removeLoadingIndicator = () => {
+                const indicator = chatBody.querySelector('.loading-indicator');
+                if (indicator) {
+                    chatBody.removeChild(indicator);
+                }
+            };
+            
+            const askGemini = async (query) => {
                 try {
                     const response = await fetch(GEMINI_API_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ contents: [{ parts: [{ text: query }] }] })
                     });
+                    
+                    removeLoadingIndicator();
+
                     if (!response.ok) {
                         const errorData = await response.json();
                         throw new Error(errorData.error.message || `API request failed with status ${response.status}`);
@@ -1320,22 +1347,15 @@
                     const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
                     if (aiResponse) {
-                        if (type === "Analysis Report") {
-                            lastMessage.textContent = aiResponse; // Update the "Generating..." message
-                        } else {
-                            appendMessage(aiResponse, 'ai-message');
-                        }
+                        appendMessage(aiResponse, 'ai-message');
                     } else {
                         throw new Error("Invalid response structure from API.");
                     }
                 } catch (error) {
                     console.error("Gemini API Error:", error);
-                    const errorMessage = `Sorry, I encountered an error: ${error.message}`;
-                    if (type === "Analysis Report") {
-                         lastMessage.textContent = errorMessage;
-                    } else {
-                         appendMessage(errorMessage, 'ai-message');
-                    }
+                    removeLoadingIndicator();
+                    const errorMessage = `Sorry, I encountered an error. Please check the console for details.`;
+                    appendMessage(errorMessage, 'ai-message');
                 }
             };
         });
