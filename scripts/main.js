@@ -660,9 +660,9 @@ document.addEventListener("DOMContentLoaded", () => {
         "Analyzing data with AI...";
 
       try {
-        const analysis = await analyzeWithGPT(comprehensiveData);
+        const analysisResult = await analyzeWithGPT(comprehensiveData);
         console.log("=== GPT Analysis Results ===");
-        console.log(analysis);
+        console.log(analysisResult.formatted);
         console.log("===========================");
 
         // Clear chat history and add the analysis
@@ -683,7 +683,15 @@ document.addEventListener("DOMContentLoaded", () => {
           );
         }
 
-        appendMessage(analysis, "ai-message");
+        // Display formatted analysis
+        appendMessage(analysisResult.formatted, "ai-message");
+
+        // If we have JSON data, also log it for debugging
+        if (analysisResult.json) {
+          console.log("=== Structured JSON Data ===");
+          console.log(analysisResult.json);
+          console.log("============================");
+        }
 
         // Automatically open the chat window
         chatbotContainer.classList.remove("hidden");
@@ -977,6 +985,63 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- GPT AGENT INTEGRATION ---
 
   /**
+   * Format structured analysis like main.py
+   */
+  function formatStructuredAnalysis(analysisJson) {
+    let formatted = "";
+
+    formatted += "=".repeat(70) + "\n";
+    formatted += "ANALYSIS RESULTS\n";
+    formatted += "=".repeat(70) + "\n";
+
+    // Development suitability
+    const devSuit = analysisJson.developmentSuitability || {};
+    formatted += `\n📊 Development Suitability: ${
+      devSuit.score || "N/A"
+    }/10 - ${devSuit.level || "N/A"}\n`;
+
+    // Dashboard summary
+    const dashboard = analysisJson.dashboardSummary || {};
+    formatted += `🎯 Overall Readiness: ${
+      dashboard.overallReadiness || "N/A"
+    }%\n`;
+    formatted += `⚠️  Critical Issues: ${dashboard.criticalIssues || "N/A"}\n`;
+    formatted += `📋 Action Items: ${dashboard.actionItemsNeeded || "N/A"}\n`;
+
+    // Data completeness
+    const dataComp = analysisJson.dataCompleteness || {};
+    formatted += `📊 Data Completeness: ${dataComp.overall || "N/A"}%\n`;
+
+    // Top risks
+    const risks = analysisJson.risks || [];
+    if (risks.length > 0) {
+      formatted += `\n🚨 Top Risks:\n`;
+      for (let i = 0; i < Math.min(3, risks.length); i++) {
+        const risk = risks[i];
+        formatted += `   • ${risk.category || "Unknown"}: ${
+          risk.severity || "unknown"
+        } severity - ${(risk.impact || "").substring(0, 60)}...\n`;
+      }
+    }
+
+    // Top recommendations
+    const recommendations = analysisJson.recommendations || [];
+    if (recommendations.length > 0) {
+      formatted += `\n💡 Top Recommendations:\n`;
+      for (let i = 0; i < Math.min(3, recommendations.length); i++) {
+        const rec = recommendations[i];
+        formatted += `   • [${(rec.priority || "unknown").toUpperCase()}] ${(
+          rec.action || ""
+        ).substring(0, 60)}...\n`;
+      }
+    }
+
+    formatted += "\n" + "=".repeat(70) + "\n";
+
+    return formatted;
+  }
+
+  /**
    * Analyze data using GPT-4o-mini (same prompt as main.py)
    */
   async function analyzeWithGPT(data) {
@@ -990,16 +1055,83 @@ document.addEventListener("DOMContentLoaded", () => {
         {
           role: "system",
           content:
-            "You are an analytical AI that evaluates environmental and geospatial data. Given structured metrics for a specific area, provide a short, data-driven summary highlighting key insights, risks, and development suitability. Keep responses concise, factual, and in plain language—no explanations or greetings.",
+            "You are an urban planning analysis AI. Analyze the provided environmental data and return ONLY a valid JSON object (no markdown, no explanations, no greetings).",
         },
         {
           role: "user",
-          content: `Analyze this comprehensive area data and provide insights on:
-1. Development suitability based on soil conditions
-2. Environmental factors and climate patterns
-3. Existing land use and infrastructure
-4. Potential risks and challenges
-5. Recommendations for sustainable development
+          content: `Analyze this comprehensive area data and return ONLY a valid JSON object with the following structure:
+
+Required JSON structure:
+
+{
+  "developmentSuitability": {
+    "score": <number 0-10>,
+    "maxScore": 10,
+    "level": "<poor|fair|moderate|good|excellent>",
+    "summary": "<brief 1-2 sentence assessment>",
+    "factors": [
+      {"name": "<factor name>", "score": <0-10>, "impact": "<low|medium|high>"}
+    ]
+  },
+  "risks": [
+    {
+      "category": "<risk type>",
+      "severity": "<low|medium|high|critical>",
+      "probability": "<low|medium|high>",
+      "impact": "<description of impact>",
+      "mitigationPriority": <1-10>,
+      "timeframe": "<immediate|short-term|medium-term|long-term>"
+    }
+  ],
+  "keyFindings": [
+    {
+      "finding": "<concise finding>",
+      "confidence": <0.0-1.0>,
+      "dataQuality": "<low|medium|high>",
+      "category": "<environmental|infrastructure|data_gap|opportunity>"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "<recommended action>",
+      "priority": "<low|medium|high|critical>",
+      "effort": "<low|medium|high>",
+      "cost": "<$|$$|$$$|$$$$>",
+      "timeframe": "<duration estimate>",
+      "impact": "<expected outcome>",
+      "category": "<assessment|infrastructure|planning|environmental>"
+    }
+  ],
+  "metrics": {
+    "temperature": {
+      "current": <average temp>,
+      "min": <min temp>,
+      "max": <max temp>,
+      "trend": "<rising|stable|falling>"
+    },
+    "precipitation": {
+      "total": <total mm>,
+      "average": <avg mm/day>,
+      "trend": "<increasing|stable|decreasing>"
+    },
+    "humidity": {
+      "average": <percentage>,
+      "assessment": "<low|moderate|high>"
+    }
+  },
+  "dataCompleteness": {
+    "overall": <percentage 0-100>,
+    "categories": [
+      {"name": "<category>", "completeness": <0-100>, "critical": <boolean>}
+    ]
+  },
+  "dashboardSummary": {
+    "overallReadiness": <percentage 0-100>,
+    "criticalIssues": <count>,
+    "actionItemsNeeded": <count>,
+    "dataGaps": <count>
+  }
+}
 
 Note: The analysis covers the area bounded by coordinates:
 - North: ${
@@ -1020,6 +1152,8 @@ Note: The analysis covers the area bounded by coordinates:
             data.areas[0]?.environmental_data?.bounding_box?.west?.toFixed(6) ||
             "N/A"
           }
+
+Base your analysis strictly on the provided data. Assess soil properties, weather patterns, risks, and development feasibility. Return ONLY the JSON object.
 
 Data:
 ${JSON.stringify(data, null, 2)}`,
@@ -1047,18 +1181,50 @@ ${JSON.stringify(data, null, 2)}`,
       }
 
       const result = await response.json();
-      const analysis = result.choices[0].message.content;
+      const rawAnalysis = result.choices[0].message.content;
+
+      // Clean the response (remove markdown code blocks if present)
+      let cleanResponse = rawAnalysis.trim();
+      if (cleanResponse.startsWith("```json")) {
+        cleanResponse = cleanResponse.substring(7);
+      }
+      if (cleanResponse.startsWith("```")) {
+        cleanResponse = cleanResponse.substring(3);
+      }
+      if (cleanResponse.endsWith("```")) {
+        cleanResponse = cleanResponse.substring(0, cleanResponse.length - 3);
+      }
+      cleanResponse = cleanResponse.trim();
+
+      // Try to parse JSON
+      let analysisJson = null;
+      let formattedAnalysis = rawAnalysis; // fallback to raw response
+
+      try {
+        analysisJson = JSON.parse(cleanResponse);
+
+        // Format the analysis like main.py
+        formattedAnalysis = formatStructuredAnalysis(analysisJson);
+      } catch (parseError) {
+        console.error("JSON parsing failed:", parseError);
+        console.log("Raw response:", rawAnalysis);
+        formattedAnalysis = `⚠️ Could not parse JSON response: ${parseError.message}\n\nRaw response:\n${rawAnalysis}`;
+      }
 
       // Add the response to conversation history
       conversationHistory.push({
         role: "assistant",
-        content: analysis,
+        content: rawAnalysis, // Store raw response for conversation context
       });
 
       // Store current analysis data for context
       currentAnalysisData = data;
 
-      return analysis;
+      return {
+        formatted: formattedAnalysis,
+        json: analysisJson,
+        raw: rawAnalysis,
+      };
     } catch (error) {
       console.error("GPT API Error:", error);
       throw error;
